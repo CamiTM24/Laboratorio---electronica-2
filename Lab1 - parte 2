@@ -1,0 +1,75 @@
+//*********************************************************************//
+// Universidad del Valle de Guatemala //
+// Laboratorio - Electronica 2 //
+// Camila Tello 24404 //
+//*********************************************************************//
+// Librerias //
+#include <Arduino.h>
+#include <stdint.h>
+//*********************************************************************//
+ // Variables globales  
+const int led1 = 12;
+const int led2 = 13;
+const int led3 = 15;
+const int led4 = 16;
+
+// botones 
+const int botonincre = 22;
+const int botondecre = 23;
+ int contador = 0;
+ //*********************************************************************//
+ // Funciones 
+
+void mostrarcontador() {
+  digitalWrite(led1, bitRead(contador, 0));
+  digitalWrite(led2, bitRead(contador, 1));
+  digitalWrite(led3, bitRead(contador, 2));
+  digitalWrite(led4, bitRead(contador, 3));
+}
+
+// numero de 4 bits es de 0 a 15 
+void increcontador() {
+  contador++;
+  if (contador > 15) contador = 0;
+  mostrarcontador();
+}
+
+void decrecontador() {
+  contador--;
+  if (contador < 0) contador = 15;
+  mostrarcontador();
+}
+
+//*********************************************************************//
+// Set up 
+void setup() {
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  pinMode(led3, OUTPUT);
+  pinMode(led4, OUTPUT);
+
+  pinMode(botonincre, INPUT_PULLUP);
+  pinMode(botondecre, INPUT_PULLUP);
+
+  mostrarcontador();
+}
+//*********************************************************************//
+// loop
+
+// Loop
+//  anti rebote de 200 
+void loop() {
+  if (digitalRead(botonincre) == LOW) {
+    increcontador();
+    delay(100);
+  }
+
+  if (digitalRead(botondecre) == LOW) {
+    decrecontador();
+    delay(100);
+  }
+}
+
+
+//*********************************************************************//
+// otras funciones 
