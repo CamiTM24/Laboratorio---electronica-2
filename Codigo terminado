@@ -1,0 +1,134 @@
+//*********************************************************************//
+// Universidad del Valle de Guatemala //
+// Laboratorio - Electronica 2 //
+// Camila Tello 24404 //
+//  Parte 1: contador de décadas de 0 a 9.
+// Parte 2: contador binario de 4 bits de 0 a 15.
+// Parte 3: botón para cambiar de modo y reiniciar en 0.
+//*********************************************************************//
+// Librerias //
+#include <Arduino.h>
+#include <stdint.h>
+//*********************************************************************//
+                           
+// Parte 1 y 2: CONTADOR BINARIO  y Decadas //
+
+//*********************************************************************//
+ // Variables globales  
+ // cada led representa un bit del contador// 
+const int led1 = 12;
+const int led2 = 13;
+const int led3 = 15;
+const int led4 = 16;
+
+// botones 
+const int botonincre = 22; // incrementa el contador 
+const int botondecre = 23; // decre el contador 
+const int botonmodo = 21; // cambiar de modos 
+ int contador = 0;        // Se guarda el valor actual. 
+ int modo = 0;             // 0 = decadas y 1 = binario 
+ int salidaModo = 0;      // Lee el modo del estado del boton 
+ //*********************************************************************//
+ // Funciones 
+// Muestra y lee el estado y el valor de los leds mediante el contador 
+void mostrarcontador() {
+  digitalWrite(led1, bitRead(contador, 0));  
+  digitalWrite(led2, bitRead(contador, 1));
+  digitalWrite(led3, bitRead(contador, 2));
+  digitalWrite(led4, bitRead(contador, 3));
+}
+
+// numero de 4 bits es de 0 a 15 
+void increcontador() {
+  contador++; // para sumar uno al contador 
+  // modo decadas de 9 a 0 
+  if (modo == 0 && contador > 9){
+    contador = 0; 
+
+  }
+// modo binario  de 15 a 0 
+  if (modo == 1 && contador > 15) {
+  contador = 0;
+  }
+mostrarcontador();
+
+}
+// derementa contador 
+
+void decrecontador() {
+  contador--; // para restar uno al contador 
+
+// Modo decadas 
+  if (modo == 0 && contador < 0){
+    contador = 9; // De 0 a 9
+
+    
+  }
+  // Modo binario 
+  if( modo == 1 && contador < 0){
+    contador = 15;
+
+  }
+
+  mostrarcontador();
+}
+//  Botón de modo.
+// Con PULLUP: presionado = LOW y suelto = HIGH.
+void cambiarmodo() {
+  int estadoModo = digitalRead(botonmodo); // Lee el botón de modo.
+  delay(15); // anti-rebote.
+
+  // Guarda que el botón fue presionado.
+  if (estadoModo == LOW) {
+    salidaModo = 1;
+  }
+
+  // Cambia de modo cuando el botón ya fue soltado.
+  if (salidaModo == 1 && estadoModo == HIGH) {
+    modo++; // Cambia al siguiente modo.
+
+    // Solo hay dos modos: 0 y 1.
+    if (modo > 1) { // al pasar a 1 regresa a cero al ser presionado 
+      modo = 0;
+    }
+
+    contador = 0;          // Reinicia el contador al cambiar de modo.
+    salidaModo = 0;  // Prepara para leer la pulsación.
+    mostrarcontador();     // Muestra cero en los LEDs.
+    delay(15);             // anti-rebote 
+  }
+}
+//*********************************************************************//
+// Set up 
+void setup() {
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  pinMode(led3, OUTPUT);
+  pinMode(led4, OUTPUT);
+
+  pinMode(botonincre, INPUT_PULLUP);
+  pinMode(botondecre, INPUT_PULLUP);
+  pinMode(botonmodo, INPUT_PULLUP);
+
+  mostrarcontador();
+}
+//*********************************************************************//
+// loop
+//  anti rebote
+void loop() {
+  
+  cambiarmodo();// para revisar boton
+  if (digitalRead(botonincre) == LOW) {
+    increcontador();
+    delay(100);
+  }
+
+  if (digitalRead(botondecre) == LOW) {
+    decrecontador();
+    delay(100);
+  }
+}
+
+
+//*********************************************************************//
+// otras funciones 
