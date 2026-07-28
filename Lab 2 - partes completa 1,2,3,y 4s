@@ -1,0 +1,440 @@
+//*********************************************************************//
+// Universidad del Valle de Guatemala //
+// Laboratorio - Electronica 2 //
+// Camila Tello 24404 //
+//*********************************************************************//
+#include <Arduino.h>
+
+//*********************************************************************//
+// Definicon de pines // 
+//*********************************************************************//
+
+// leds timer 
+const int led1 = 23;
+const int led2 = 18;
+const int led3 = 21;
+const int led4 = 19;
+
+// Leds botones 
+const int led5 = 32;
+const int led6 = 25;
+const int led7 = 26;
+const int led8 = 33;
+
+// led alarma 
+const int led9 = 27;
+
+// Botones 
+
+const int b1 = 22;// boton 1 incrementar 
+const int b2 = 4;// boton 2  decrementar 
+
+// sensor parte 4 
+const int touch = 13; // Pin del sensor capacitivo
+
+
+// Contador de 4 bits 
+volatile uint8_t contadorBoton = 0;
+
+// Variables de anti-rebote para boton
+volatile uint32_t tiempoSubir = 0;
+volatile uint32_t tiempoBajar = 0;
+const uint32_t antirebote = 300; // mS entre pulsaciones válidas
+
+
+/// *********************************************************************************************************************
+///  PARTE 1 - CONTADOR MEDIANTE INTERRUOCIONES 
+/// *********************************************************************************************************************
+//  proteger contadorBoton cuando se lee/escribe
+// desde la ISR y desde el loop() al mismo tiempo.
+portMUX_TYPE candadoBoton = portMUX_INITIALIZER_UNLOCKED;
+
+
+// ---- Definición de Funciones -------------
+void mostrarContadorBoton(uint8_t valor);
+ 
+// ---- Interrupciones  -----------------------
+ 
+// ISR de B1: incrementa el contador
+void IRAM_ATTR Subir() {
+  uint32_t ahora = millis();
+  if (ahora - tiempoSubir > antirebote) {
+    portENTER_CRITICAL_ISR(&candadoBoton);
+    contadorBoton = (contadorBoton + 1) % 16; // circular: 15 -> 0
+    portEXIT_CRITICAL_ISR(&candadoBoton);
+    tiempoSubir = ahora;
+  }
+}
+ 
+// ISR de B2: decrementa el contador
+void IRAM_ATTR Bajar() {
+  uint32_t ahora = millis();
+  if (ahora - tiempoBajar > antirebote) {
+    portENTER_CRITICAL_ISR(&candadoBoton);
+    contadorBoton = (contadorBoton + 15) % 16; // circular: 0 -> 15 (equivale a -1)
+    portEXIT_CRITICAL_ISR(&candadoBoton);
+    tiempoBajar = ahora;
+  }
+}
+ 
+// Muestra el valor del contador en los 4 LEDs (binario)
+void mostrarContadorBoton(uint8_t valor) {
+  digitalWrite(led5, bitRead(valor, 0));
+  digitalWrite(led6, bitRead(valor, 1));
+  digitalWrite(led7, bitRead(valor, 2));
+  digitalWrite(led8, bitRead(valor, 3));
+}
+ 
+/// *********************************************************************************************************************
+/// PARTE 2 - TEMPORIZADOR SIN USO DE BOTONES 
+/// *********************************************************************************************************************
+
+#define alarma 250000 // micro 250ms
+// *****************************************************************
+// PROTOTIPOS DE FUNCIONES
+// ************************************************************************
+
+void Timer(void);
+void mostrarContadorAuto(void);
+void IRAM_ATTR Timer0_ISR();
+
+// *******************************
+// VARIABLES GLOBALES
+// *******************************
+
+hw_timer_t *Timer0_cfg = NULL;
+
+// Contador automático de 0 a 15
+volatile int contadorAuto = 0;
+
+// *********************************************************************************************************************
+/// PARTE 3 - COMPARADOR Y ALARMA
+/// *********************************************************************************************************************
+// Bandera para detectar el "flanco" de coincidencia.
+bool coincidenciaPrevia = false;
+
+// Guarda si el LED de alarma está encendido o apagado actualmente
+bool estadoAlarma = false;
+
+// *******************************
+// PROTOTIPO DE FUNCIÓN
+// *******************************
+void compararContadores(void);
+
+// *******************************
+// FUNCIÓN: Comparador y alarma
+// *******************************
+void compararContadores()
+{
+  // Leemos contadorBoton de forma protegida
+  uint8_t valorBoton;
+  portENTER_CRITICAL(&candadoBoton);
+  valorBoton = contadorBoton;
+  portEXIT_CRITICAL(&candadoBoton);
+
+  // Los dos contadores tienen el mismo valor en este instante
+  bool coincide = (valorBoton == contadorAuto);
+
+  //  "detectar el flanco"
+  if (coincide && !coincidenciaPrevia)
+  {
+    // Cambiar el estado del LED de alarma (parpadeo tipo toggle)
+    estadoAlarma = !estadoAlarma;
+    digitalWrite(led9, estadoAlarma);
+
+    // Reiniciar el contador auto
+    contadorAuto = 0;
+  }
+
+  coincidenciaPrevia = coincide;
+}
+
+/// *********************************************************************************************************************
+/// PARTE 4 - REINICIO MEDIANTE SENSOR CAPACITIVO
+/// ************************************************************************************
+//  activación de pin 
+const int umbraltouch = 30;
+
+// anti rebote 
+uint32_t tiempotouch = 0;
+const uint32_t antirebotetouch = 300; // mS
+
+// *******************************
+// FUNCIÓN: revisar sensor capacitivo
+// *******************************
+void revisartouch()
+{
+  // touchRead() regresa un número que bajo cuando tocas el pin
+  int valorTouch = touchRead(touch);
+
+  uint32_t ahora = millis();
+
+   if (valorTouch < umbraltouch && (ahora - tiempotouch > antirebotetouch))
+  {
+    // Reiniciar el contador automático 
+    contadorAuto = 0;
+
+    // Guardamos el momento
+    tiempotouch = ahora;
+  }
+}
+
+// **********************************************************************************
+// CONFIGURACIÓN.  Setup ()
+// ***********************************************************************************
+
+void setup()
+{
+// ----------------------------------------------------------------------------
+//                           PARTE 1 BOTONES
+// -----------------------------------------------------------------------------
+
+// Para leds  botones ---------
+
+pinMode(led5,OUTPUT);
+pinMode(led6,OUTPUT);
+pinMode(led7,OUTPUT);
+pinMode(led8,OUTPUT);
+
+// Para botones ------- 
+pinMode(b1,INPUT_PULLDOWN); // incre 
+pinMode(b2,INPUT_PULLDOWN); // decre 
+
+attachInterrupt(b1, Subir, RISING);
+attachInterrupt(b2, Bajar, RISING);
+ 
+  mostrarContadorBoton(0);
+
+  // ----------------------------------------------------------------------------
+  //                           PARTE 2 TIMER 
+  // -----------------------------------------------------------------------------
+  //  LEDs  como salidas Parte 2 Timer 
+
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  pinMode(led3, OUTPUT);
+  pinMode(led4, OUTPUT);
+
+  // Apagar leds 
+  digitalWrite(led1, LOW);
+  digitalWrite(led2, LOW);
+  digitalWrite(led3, LOW);
+  digitalWrite(led4, LOW);
+
+  // temporizador
+  // Timer();
+
+// ----------------------------------------------------------------------------
+//                           PARTE 3 ALARMA
+// -----------------------------------------------------------------------------
+// Para leds alarma 
+//pinMode(led9, OUTPUT);
+//digitalWrite(led9, LOW); // alarma apagada al inicio  
+
+}
+
+//,---------------------------------------------------------------------------------------------
+// ***************************************************************************************
+//  LOOP
+// ***************************************************************************************
+void loop()
+{
+// ----------------------------------------------------------------------------
+//                           PARTE 1 BOTONES
+// -----------------------------------------------------------------------------
+uint8_t valorActual;
+  portENTER_CRITICAL(&candadoBoton);
+  valorActual = contadorBoton;
+  portEXIT_CRITICAL(&candadoBoton);
+  mostrarContadorBoton(valorActual);
+// ----------------------------------------------------------------------------
+//                           PARTE 2 TIMER 
+// -----------------------------------------------------------------------------
+  //mostrarContadorAuto();
+// ----------------------------------------------------------------------------
+//                           PARTE 3 ALARMA
+// -----------------------------------------------------------------------------
+  //compararContadores();
+
+//----------------------------------------------------------------------------
+//                           PARTE 4 SENSOR
+// -----------------------------------------------------------------------------
+  //revisartouch();
+
+}
+
+// ********************************************************************************************
+//.  INTERRUPCIÓN DEL TEMPO
+// *********************************************************************************************
+
+void IRAM_ATTR Timer0_ISR()
+{
+  // Cada 250 ms aumenta el contador
+  contadorAuto++;
+
+  // Contador circular
+  // Si pasa de 15, vuelve a 0
+  if (contadorAuto > 15)
+  {
+    contadorAuto= 0;
+  }
+}
+
+// *******************************
+// FUNCIÓN PARA MOSTRAR EL CONTADOR de Leds 
+// *******************************
+
+void mostrarContadorAuto()
+{
+  if (contadorAuto == 0)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 1)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 2)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 3)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 4)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 5)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 6)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 7)
+  {
+    digitalWrite(led4, LOW);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 8)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 9)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 10)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 11)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, LOW);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 12)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 13)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, LOW);
+    digitalWrite(led1, HIGH);
+  }
+
+  else if (contadorAuto == 14)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, LOW);
+  }
+
+  else if (contadorAuto == 15)
+  {
+    digitalWrite(led4, HIGH);
+    digitalWrite(led3, HIGH);
+    digitalWrite(led2, HIGH);
+    digitalWrite(led1, HIGH);
+  }
+}
+
+// *******************************
+// CONFIGURACIÓN DEL TEMPORIZADOR
+// *******************************
+
+void Timer(void)
+{
+  // Timer 0, prescaler 80, conteo ascendente
+  Timer0_cfg = timerBegin(0, 80, true);
+
+  // Asociar la interrupción del timer
+  timerAttachInterrupt(Timer0_cfg, &Timer0_ISR, true);
+
+  // Activar alarma cada 250000 microsegundos
+  timerAlarmWrite(Timer0_cfg, alarma, true);
+
+  // Iniciar la alarma
+  timerAlarmEnable(Timer0_cfg);
+}
+
+/// *********************************************************************************************************************
+/// PARTE 3 - COMPARADOR Y ALARMA
+/// *********************************************************************************************************************
+
